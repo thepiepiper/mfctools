@@ -10,8 +10,20 @@ TOKEN_COST=.08
 
 # Functions
 function calcPercent() {
-	echo "CALCPERCENT DEBUG [$1|$2]" >> /tmp/out
-	printf "%7.0f\n" `echo "( (${1} * 100) / (${2} * 100) ) * 100" | bc -l`
+	printf '%7.0f' `echo "( (${1} * 100) / (${2} * 100) ) * 100" | bc -l`
+}
+
+function calcCost() {
+	echo "${1} * ${TOKEN_COST}" | bc -l
+}
+
+# Params: title matchCount matchTokens
+function printStats() {
+	printf '\n=== %s\n' "${1}"
+	printf '            Count          Tokens         Dollars\n'
+	printf 'Match     %7d         %7d         %7.2f\n' ${2} ${3} `calcCost ${3}`
+	printf 'Total     %7d         %7d         %7.2f\n' $totalCount $totalTokens `calcCost ${totalTokens}`
+	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
 }
 
 
@@ -97,6 +109,13 @@ do
 			SEARCHCAMGIRL="$1"
 			shift
 			;;
+		-tr|--tokenrange)
+			SEARCHTOKENRANGE=1
+			SEARCHTOKENRANGE_MIN=$1
+			shift
+			SEARCHTOKENRANGE_MAX=$1
+			shift
+			;;
 		-r|--printrecords)
 			PRINTRECORDS=1
 			;;
@@ -138,6 +157,9 @@ do
 	if [[ "${SEARCHCAMGIRL}" != "" && ! ${camgirl} =~ ${SEARCHCAMGIRL} ]] ; then
 		isMatch=0
 	fi
+	if [[ "${SEARCHTOKENRANGE}" != "" && ( ${tokens} -lt ${SEARCHTOKENRANGE_MIN} || ${tokens} -gt ${SEARCHTOKENRANGE_MAX}  ) ]] ; then
+		isMatch=0
+	fi
 
 
 	# Process the record
@@ -166,11 +188,7 @@ done < "${TIPFILE}"
 if [[ ${GROUPBYMONTH} -eq 1 ]] ; then
 	for key in `echo ${!gbMonthCount[*]} | tr ' ' '\n' | sort`
 	do
-		printf '=== Month %s\n' $key
-		printf '            Count          Tokens         Dollars\n'
-		printf 'Match     %7d         %7d         %7.2f\n' ${gbMonthCount[$key]} ${gbMonthTokens[$key]} `echo "${gbMonthTokens[$key]} * ${TOKEN_COST}" | bc`
-		printf 'Total     %7d         %7d         %7.2f\n' $totalCount $totalTokens `echo "${totalTokens} * ${TOKEN_COST}" | bc`
-		printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${gbMonthCount[$key]} ${totalCount}` `calcPercent ${gbMonthTokens[$key]} ${totalTokens}` `calcPercent ${gbMonthTokens[$key]} ${totalTokens}`
+		printStats "Month ${key}" ${gbMonthCount[$key]} ${gbMonthTokens[$key]}
 	done
 fi
 
@@ -178,20 +196,12 @@ fi
 if [[ ${GROUPBYCAMGIRL} -eq 1 ]] ; then
 	for key in `echo ${!gbCamGirlCount[*]} | tr ' ' '\n' | sort`
 	do
-		printf '=== Camgirl %s\n' $key
-		printf '            Count          Tokens         Dollars\n'
-		printf 'Match     %7d         %7d         %7.2f\n' ${gbCamGirlCount[$key]} ${gbCamGirlTokens[$key]} `echo "${gbCamGirlTokens[$key]} * ${TOKEN_COST}" | bc`
-		printf 'Total     %7d         %7d         %7.2f\n' $totalCount $totalTokens `echo "${totalTokens} * ${TOKEN_COST}" | bc`
-		printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${gbCamGirlCount[$key]} ${totalCount}` `calcPercent ${gbCamGirlTokens[$key]} ${totalTokens}` `calcPercent ${gbCamGirlTokens[$key]} ${totalTokens}`
+		printStats "Camgirl ${key}" ${gbCamGirlCount[$key]} ${gbCamGirlTokens[$key]}
 	done
 fi
 
 # Print totals
-printf '=== TOTALS\n'
-printf '            Count          Tokens         Dollars\n'
-printf 'Match     %7d         %7d         %7.2f\n' $matchCount $matchTokens `echo "${matchTokens} * ${TOKEN_COST}" | bc`
-printf 'Total     %7d         %7d         %7.2f\n' $totalCount $totalTokens `echo "${totalTokens}*${TOKEN_COST}" | bc`
-printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${matchCount} ${totalCount}` `calcPercent ${matchTokens} ${totalTokens}`  `calcPercent ${matchTokens} ${totalTokens}`
+printStats "TOTALS" ${matchCount} ${matchTokens}
 
 
 
