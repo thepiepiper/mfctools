@@ -26,10 +26,7 @@ function printStats() {
 	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
 }
 
-
-# Add mode
-if [[ "${1}" = "-a" ]] ; then
-	shift
+function addTips() {
 	echo "Adding rows"
 
 	if [[ -f "${TIPFILE}" ]] ; then
@@ -39,16 +36,18 @@ if [[ "${1}" = "-a" ]] ; then
 	fi
 
 	count=0
-	while read month day year time type camgirl Tokens extra
+	while read month day year time type camgirl tokens extra
 	do
-		# Fix group show, which is two words, so it shifts everything after it
-		if [[ ${type} = "Group" ]] ; then
-			camgirl=${Tokens}
-			Tokens=${extra}
+		if [ "${DEBUG_MODE}" != "" ] ; then
+			echo "> [${month}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}|${extra}]"
 		fi
 
-		# echo "< [${month}|${day}|${year}|${time}|${type}|${camgirl}|${Tokens}]"
-
+		# Fix group show, which is two words, so it shifts everything after it
+		if [[ "${extra}" != "" ]] ; then
+			type="${type}${camgirl}"
+			camgirl=${tokens}
+			tokens=${extra}
+		fi
 
 		year=`echo ${year} | tr -d '[,]'`
 		year=`printf '%04d' ${year}`
@@ -64,6 +63,7 @@ if [[ "${1}" = "-a" ]] ; then
 		done
 
 		if [ ${monthNo} -eq 0 ] ; then
+			# Bad record.  Skip
 			continue
 		fi
 
@@ -72,33 +72,38 @@ if [[ "${1}" = "-a" ]] ; then
 
 		time=`echo ${time} | tr ':' '\t'`
 
-		#echo "> [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${Tokens}]"
-		echo -e "${year}\t${monthNo}\t${day}\t${time}\t${type}\t${camgirl}\t${Tokens}" >> "${TMPTIPFILE}"
+		if [ "${DEBUG_MODE}" != "" ] ; then
+			echo "< [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}]"
+		fi
+		echo -e "${year}\t${monthNo}\t${day}\t${time}\t${type}\t${camgirl}\t${tokens}" >> "${TMPTIPFILE}"
 		count=$(($count + 1))
 	done
 
 	# Make sure we have sorted rows
-	# We can't sort unique in case there are multiple tips in the same second
+	# We can't sort unique to elimiate duplicate adds in case there are multiple tips in the same second
 	sort  < "${TMPTIPFILE}" > "${TIPFILE}"
 
 	echo "${count} rows added, "`wc -l "${TIPFILE}"`" total"
-fi
+}
 
+
+# Parse parameters
 while [[ $# -gt 0 ]]
 do
 	key="$1"
 	shift
+	echo "KEY='${key}'"
 	case ${key} in
 		-y|--year)
-			SEARCHYEAR="$1"
+			SEARCH_YEAR="$1"
 			shift
 			;;
 		-m|--month)
-			SEARCHMONTH="$1"
+			SEARCH_MONTH="$1"
 			shift
 			;;
 		-d|--day)
-			SEARCHDAY="$1"
+			SEARCH_DAY="$1"
 			shift
 			;;
 		-t|--type)
@@ -106,18 +111,18 @@ do
 			shift
 			;;
 		-c|--camgirl)
-			SEARCHCAMGIRL="$1"
+			SEARCH_CAMGIRL="$1"
 			shift
 			;;
 		-tr|--tokenrange)
-			SEARCHTOKENRANGE=1
-			SEARCHTOKENRANGE_MIN=$1
+			SEARCH_TOKENRANGE=1
+			SEARCH_TOKENRANGE_MIN=$1
 			shift
-			SEARCHTOKENRANGE_MAX=$1
+			SEARCH_TOKENRANGE_MAX=$1
 			shift
 			;;
-		-r|--printrecords)
-			PRINTRECORDS=1
+		-r|--PRINT_RECORDS)
+			PRINT_RECORDS=1
 			;;
 		-gc|--groupby-camgirl)
 			GROUPBYCAMGIRL=1
@@ -128,6 +133,12 @@ do
 			GROUPBYMONTH=1
 			declare -A gbMonthCount
 			declare -A gbMonthTokens
+			;;
+		-a|--add-tips)
+			addTips
+			;;
+		-v|--verbose)
+			DEBUG_MODE=1
 			;;
 		*)
 			# unknown option
@@ -142,29 +153,29 @@ while read year month day hour minute second type camgirl tokens
 do
 	# Does this record match the filter criteria?
 	isMatch=1
-	if [[ "${SEARCHYEAR}" != "" && ! ${year} =~ ${SEARCHYEAR} ]] ; then
+	if [[ "${SEARCH_YEAR}" != "" && ! ${year} =~ ${SEARCH_YEAR} ]] ; then
 		isMatch=0
 	fi
-	if [[ "${SEARCHMONTH}" != "" && ! ${month} =~ ${SEARCHMONTH} ]] ; then
+	if [[ "${SEARCH_MONTH}" != "" && ! ${month} =~ ${SEARCH_MONTH} ]] ; then
 		isMatch=0
 	fi
-	if [[ "${SEARCHDAY}" != "" && ! ${day} =~ ${SEARCHDAY} ]] ; then
+	if [[ "${SEARCH_DAY}" != "" && ! ${day} =~ ${SEARCH_DAY} ]] ; then
 		isMatch=0
 	fi
 	if [[ "${SEARCHTYPE}" != "" && ! ${type} =~ ${SEARCHTYPE} ]] ; then
 		isMatch=0
 	fi
-	if [[ "${SEARCHCAMGIRL}" != "" && ! ${camgirl} =~ ${SEARCHCAMGIRL} ]] ; then
+	if [[ "${SEARCH_CAMGIRL}" != "" && ! ${camgirl} =~ ${SEARCH_CAMGIRL} ]] ; then
 		isMatch=0
 	fi
-	if [[ "${SEARCHTOKENRANGE}" != "" && ( ${tokens} -lt ${SEARCHTOKENRANGE_MIN} || ${tokens} -gt ${SEARCHTOKENRANGE_MAX}  ) ]] ; then
+	if [[ "${SEARCH_TOKENRANGE}" != "" && ( ${tokens} -lt ${SEARCH_TOKENRANGE_MIN} || ${tokens} -gt ${SEARCH_TOKENRANGE_MAX}  ) ]] ; then
 		isMatch=0
 	fi
 
 
 	# Process the record
 	if [[ $isMatch -eq 1 ]] ; then
-		if [[ $PRINTRECORDS -eq 1 ]] ; then
+		if [[ $PRINT_RECORDS -eq 1 ]] ; then
 			echo $year $month $day $hour $minute $second $type $camgirl $tokens
 		fi
 		matchCount=$(($matchCount + 1))
