@@ -26,29 +26,12 @@ function printStats() {
 	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
 }
 
-function addTips() {
-	echo "Adding rows"
-
-	if [[ -f "${TIPFILE}" ]] ; then
-		cp "${TIPFILE}" "${TMPTIPFILE}"
-	else
-		rm -f "${TMPTIPFILE}"
+# Add a tip read in from the input to the tip file
+function addTip() {
+	if [ "${DEBUG_MODE}" != "" ] ; then
+		echo "     addTip [${year}|${month}|${day}|${time}|${type}|${camgirl}|${tokens}|${note}]"
 	fi
-
-	count=0
-	while read month day year time type camgirl tokens extra
-	do
-		if [ "${DEBUG_MODE}" != "" ] ; then
-			echo "> [${month}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}|${extra}]"
-		fi
-
-		# Fix group show, which is two words, so it shifts everything after it
-		if [[ "${extra}" != "" ]] ; then
-			type="${type}${camgirl}"
-			camgirl=${tokens}
-			tokens=${extra}
-		fi
-
+	if [[ "${year}" != "" ]] ; then
 		year=`echo ${year} | tr -d '[,]'`
 		year=`printf '%04d' ${year}`
 
@@ -63,8 +46,9 @@ function addTips() {
 		done
 
 		if [ ${monthNo} -eq 0 ] ; then
-			# Bad record.  Skip
-			continue
+			if [ "${DEBUG_MODE}" != "" ] ; then
+				echo "      Bad month, skipping"
+			fi
 		fi
 
 		day=`echo ${day} | tr -d '[a-z,]'`
@@ -73,11 +57,81 @@ function addTips() {
 		time=`echo ${time} | tr ':' '\t'`
 
 		if [ "${DEBUG_MODE}" != "" ] ; then
-			echo "< [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}]"
+			echo "WRITING [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}|${note}]"
 		fi
-		echo -e "${year}\t${monthNo}\t${day}\t${time}\t${type}\t${camgirl}\t${tokens}" >> "${TMPTIPFILE}"
+		echo -e "${year}\t${monthNo}\t${day}\t${time}\t${type}\t${camgirl}\t${tokens}\t${note}" >> "${TMPTIPFILE}"
+
 		count=$(($count + 1))
+	else
+		if [ "${DEBUG_MODE}" != "" ] ; then
+			echo "      Empty year, skipping"
+		fi
+	fi
+}
+
+# Read lines from stdin
+# Since we may have tip lines, and won't know it until after the data, we have to process each line after reading the next and
+# determining what kind of line it is
+function addTips() {
+	echo "Adding rows"
+
+	if [[ -f "${TIPFILE}" ]] ; then
+		cp "${TIPFILE}" "${TMPTIPFILE}"
+	else
+		rm -f "${TMPTIPFILE}"
+	fi
+
+	count=0
+	read -a lineIn
+	#while read month day year time type camgirl tokens extra
+	while [[ "${lineIn[0]}" != "" ]]
+	do
+		if [ "${DEBUG_MODE}" != "" ] ; then
+			echo "READING [${lineIn[*]}]"
+		fi
+
+		# Identify the kind of line last read
+		if [[ ${lineIn[0]} =~ [A-Z][a-z][a-z] &&  ${lineIn[1]} =~ [0-9][0-9stndrd,]+ &&  ${lineIn[2]} =~ [0-9]{4}[,] ]] ; then
+			if [[ ${lineIn[6]} =~ [0-9]+ ]] ; then
+				if [ "${DEBUG_MODE}" != "" ] ; then
+					echo "     Tip line with a single-word type"
+				fi
+				addTip
+				month=${lineIn[0]}
+				day=${lineIn[1]}
+				year=${lineIn[2]}
+				time=${lineIn[3]}
+				type=${lineIn[4]}
+				camgirl=${lineIn[5]}
+				tokens=${lineIn[6]}
+				note=""
+			else
+				if [ "${DEBUG_MODE}" != "" ] ; then
+					echo "     Tip line with a double-word type"
+				fi
+				addTip
+				month=${lineIn[0]}
+				day=${lineIn[1]}
+				year=${lineIn[2]}
+				time=${lineIn[3]}
+				type="${lineIn[4]}${lineIn[5]}"
+				camgirl=${lineIn[6]}
+				tokens=${lineIn[7]}
+				note=""
+			fi
+		else
+			if [ "${DEBUG_MODE}" != "" ] ; then
+				echo "     Tip note line"
+			fi
+			note="${lineIn[*]}"
+			# This record will be written on the next read, so don't addTip here
+		fi
+
+		read -a lineIn
 	done
+
+	# Process the last line
+	addTip
 
 	# Make sure we have sorted rows
 	# We can't sort unique to elimiate duplicate adds in case there are multiple tips in the same second
