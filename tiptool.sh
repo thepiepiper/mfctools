@@ -1,6 +1,14 @@
 #!/bin/bash
 
-TIPFILE="/tmp/tips.txt"
+TIPTOOL_HOME="${HOME}/.tiptool"
+if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
+	mkdir -p "${TIPTOOL_HOME}"
+	if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
+		echo "Cannot create '${TIPTOOL_HOME}'. Exiting."
+		exit
+	fi
+fi
+TIPFILE="${TIPTOOL_HOME}/tips.txt"
 TMPTIPFILE="${TIPFILE}.tmp"
 
 # Defaults
@@ -138,6 +146,7 @@ function addTips() {
 	sort  < "${TMPTIPFILE}" > "${TIPFILE}"
 
 	echo "${count} rows added, "`wc -l "${TIPFILE}"`" total"
+	exit
 }
 
 
@@ -148,31 +157,39 @@ do
 	shift
 	echo "KEY='${key}'"
 	case ${key} in
-		-y|--year)
+		-sy|--search_year)
 			SEARCH_YEAR="$1"
 			shift
 			;;
-		-m|--month)
+		-s|--search_month)
 			SEARCH_MONTH="$1"
 			shift
 			;;
-		-d|--day)
+		-sd|--search_day)
 			SEARCH_DAY="$1"
 			shift
 			;;
-		-t|--type)
+		-st|--search_type)
 			SEARCHTYPE="$1"
 			shift
 			;;
-		-c|--camgirl)
+		-sc|--search_camgirl)
 			SEARCH_CAMGIRL="$1"
 			shift
 			;;
-		-tr|--tokenrange)
+		-str|--search_tokenrange)
 			SEARCH_TOKENRANGE=1
 			SEARCH_TOKENRANGE_MIN=$1
 			shift
 			SEARCH_TOKENRANGE_MAX=$1
+			shift
+			;;
+		-sn|--search_note)
+			SEARCH_NOTE="$1"
+			shift
+			;;
+		-sa|--search_ALL)
+			SEARCH_ALL="$1"
 			shift
 			;;
 		-r|--PRINT_RECORDS)
@@ -203,7 +220,7 @@ done
 
 
 # Read each record and process it
-while read year month day hour minute second type camgirl tokens
+while read year month day hour minute second type camgirl tokens note
 do
 	# Does this record match the filter criteria?
 	isMatch=1
@@ -225,12 +242,18 @@ do
 	if [[ "${SEARCH_TOKENRANGE}" != "" && ( ${tokens} -lt ${SEARCH_TOKENRANGE_MIN} || ${tokens} -gt ${SEARCH_TOKENRANGE_MAX}  ) ]] ; then
 		isMatch=0
 	fi
+	if [[ "${SEARCH_NOTE}" != "" && ! ${note} =~ ${SEARCH_NOTE} ]] ; then
+		isMatch=0
+	fi
+	if [[ "${SEARCH_ALL}" != "" && ! "$year $month $day $hour $minute $second $type $camgirl $tokens $note" =~ ${SEARCH_ALL} ]] ; then
+		isMatch=0
+	fi
 
 
 	# Process the record
 	if [[ $isMatch -eq 1 ]] ; then
 		if [[ $PRINT_RECORDS -eq 1 ]] ; then
-			echo $year $month $day $hour $minute $second $type $camgirl $tokens
+			echo "[$year|$month|$day|$hour|$minute|$second|$type|$camgirl|$tokens|$note]"
 		fi
 		matchCount=$(($matchCount + 1))
 		matchTokens=$(($matchTokens + $tokens))
