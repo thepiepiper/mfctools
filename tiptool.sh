@@ -161,7 +161,7 @@ do
 			SEARCH_YEAR="$1"
 			shift
 			;;
-		-s|--search_month)
+		-sm|--search_month)
 			SEARCH_MONTH="$1"
 			shift
 			;;
