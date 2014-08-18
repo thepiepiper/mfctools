@@ -1,22 +1,82 @@
 #!/bin/bash
 
+# Configuration
 TIPTOOL_HOME="${HOME}/.tiptool"
-if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
-	mkdir -p "${TIPTOOL_HOME}"
-	if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
-		echo "Cannot create '${TIPTOOL_HOME}'. Exiting."
-		exit
-	fi
-fi
-TIPFILE="${TIPTOOL_HOME}/tips.txt"
-TMPTIPFILE="${TIPFILE}.tmp"
+# How many tokens do you buy in a package at a time?
+TOKEN_PURCHASE_COUNT=900
+# How much does that package cost?
+TOKEN_PURCHASE_COST=74.99
 
-# Defaults
-MODE="QUERY"
+
+# Globals
+# Array of months to turn names into numbers
 MONTHS=(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
-TOKEN_COST=.08
+TOKEN_COST=`echo "${TOKEN_PURCHASE_COST} / ${TOKEN_PURCHASE_COUNT}" | bc -l`
+CMDNAME=`basename $0`
+
 
 # Functions
+function usage() {
+	cat << HELPHEREDOC
+
+${CMDNAME}
+Stores MyFreeCams tips and performs statistical reporting.
+Tip information is stored in ${TIPFILE}
+
+Adding tips:
+    -a
+   --add-tips                Reads the copied-and-pasted contents of the MFC
+       Token Usage page from stdin.  Bring up that page and copy just the
+       table of token usage, with or   without tip comments.  The easiest
+       way to do  this is to copy the the tip data to the clipboard run
+       "${CMDNAME} -a", paste the token usage lines into the
+       terminal, then press Control-D.
+       Alternately, you can paste it into a file, and run
+       "${CMDNAME} -a < myfilename"
+       If you paste the same tip multiple times. it will be counted
+       multiple times.
+
+Searching
+NOTE: All searches are regular espressions, not just character matches.
+All searches are additive.  Matching records must match all searches
+    -sy <YEAR>                Search by year
+   --search_year <YEAR>
+    -sm <MONTH>               Search by month
+   --search_month <MONTH>
+    -sd <DAY_OF_MONTH>        Search by day
+   --search_day <DAY_OF_MONTH>
+    -st <TYPE>                Search by type (Tip, GroupShow,..)
+   --search_type <TYPE>
+    -sc <CAMGIRL>             Search by CamGirl name
+   --search_type <CAMGIRL>
+    -str <MIN> <MAX>          Search for tip ammounts in that range
+   --search_tokenrange
+    -sn <MESSAGE>             Search for a message in tip comments
+   --search_note <MESSAGE>
+    -sa <MESSAGE>             Search the entire record for the message
+   --search_all
+
+Grouping/subtotaling
+These options will print subtotals
+    -gc                       Group by CamGirl
+   --groupby-camgirl
+    -gy                       Group by year
+   --groupby-year
+    -gm                       Group by month
+   --groupby-month
+    -gd                       Group by day
+   --groupby-day
+
+Other options
+    -h                        Print this help text
+    -v                        Verbose mode
+    -r                        Print out all matching records, not just totals
+
+HELPHEREDOC
+exit
+}
+
+
 function calcPercent() {
 	printf '%7.0f' `echo "( (${1} * 100) / (${2} * 100) ) * 100" | bc -l`
 }
@@ -149,13 +209,22 @@ function addTips() {
 	exit
 }
 
+# Create data directory
+if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
+	mkdir -p "${TIPTOOL_HOME}"
+	if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
+		echo "Cannot create '${TIPTOOL_HOME}'. Exiting."
+		exit
+	fi
+fi
+TIPFILE="${TIPTOOL_HOME}/tips.txt"
+TMPTIPFILE="${TIPFILE}.tmp"
 
-# Parse parameters
+
 while [[ $# -gt 0 ]]
 do
 	key="$1"
 	shift
-	echo "KEY='${key}'"
 	case ${key} in
 		-sy|--search_year)
 			SEARCH_YEAR="$1"
@@ -200,13 +269,26 @@ do
 			declare -A gbCamGirlCount
 			declare -A gbCamGirlTokens
 			;;
+		-gy|--groupby-year)
+			GROUPBYYEAR=1
+			declare -A gbYearCount
+			declare -A gbYearTokens
+			;;
 		-gm|--groupby-month)
 			GROUPBYMONTH=1
 			declare -A gbMonthCount
 			declare -A gbMonthTokens
 			;;
+		-gd|--groupby-day)
+			GROUPBYDAY=1
+			declare -A gbDayCount
+			declare -A gbDayTokens
+			;;
 		-a|--add-tips)
 			addTips
+			;;
+		-h|--help)
+			usage
 			;;
 		-v|--verbose)
 			DEBUG_MODE=1
@@ -259,9 +341,17 @@ do
 		matchTokens=$(($matchTokens + $tokens))
 
 		# Grouping operations
+		if [[ ${GROUPBYYEAR} -eq 1 ]] ; then
+			gbYearCount[${year}]=$((gbYearCount[${year}] + 1))
+			gbYearTokens[${year}]=$((gbYearTokens[${year}] + $tokens))
+		fi
 		if [[ ${GROUPBYMONTH} -eq 1 ]] ; then
 			gbMonthCount[${year}.${month}]=$((gbMonthCount[${year}.${month}] + 1))
 			gbMonthTokens[${year}.${month}]=$((gbMonthTokens[${year}.${month}] + $tokens))
+		fi
+		if [[ ${GROUPBYDAY} -eq 1 ]] ; then
+			gbDayCount[${year}.${month}.${day}]=$((gbDayCount[${year}.${month}.${day}] + 1))
+			gbDayTokens[${year}.${month}.${day}]=$((gbDayTokens[${year}.${month}.${day}] + $tokens))
 		fi
 		if [[ ${GROUPBYCAMGIRL} -eq 1 ]] ; then
 			gbCamGirlCount[$camgirl]=$((gbCamGirlCount[$camgirl] + 1))
@@ -272,11 +362,23 @@ do
 	totalTokens=$(($totalTokens + $tokens))
 done < "${TIPFILE}"
 
-# Print month groupings
+# Print date groupings
+if [[ ${GROUPBYYEAR} -eq 1 ]] ; then
+	for key in `echo ${!gbYearCount[*]} | tr ' ' '\n' | sort`
+	do
+		printStats "Year ${key}" ${gbYearCount[$key]} ${gbYearTokens[$key]}
+	done
+fi
 if [[ ${GROUPBYMONTH} -eq 1 ]] ; then
 	for key in `echo ${!gbMonthCount[*]} | tr ' ' '\n' | sort`
 	do
 		printStats "Month ${key}" ${gbMonthCount[$key]} ${gbMonthTokens[$key]}
+	done
+fi
+if [[ ${GROUPBYDAY} -eq 1 ]] ; then
+	for key in `echo ${!gbDayCount[*]} | tr ' ' '\n' | sort`
+	do
+		printStats "Day ${key}" ${gbDayCount[$key]} ${gbDayTokens[$key]}
 	done
 fi
 
