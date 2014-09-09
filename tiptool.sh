@@ -24,7 +24,7 @@ Stores MyFreeCams tips and performs statistical reporting.
 Tip information is stored in ${TIPFILE}
 
 Adding tips:
-    -a
+    -at
    --add-tips                Reads the copied-and-pasted contents of the MFC
        Token Usage page from stdin.  Bring up that page and copy just the
        table of token usage, with or   without tip comments.  The easiest
@@ -35,6 +35,8 @@ Adding tips:
        "${CMDNAME} -a < myfilename"
        If you paste the same tip multiple times. it will be counted
        multiple times.
+    -rt                      Same as add-tips but deletes existing tips first
+   --replace-tips
 
 Searching
 NOTE: All searches are regular espressions, not just character matches.
@@ -94,6 +96,13 @@ function printStats() {
 	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
 }
 
+# Params: title matchCount matchTokens
+function printSubStats() {
+	printf '            Count          Tokens         Dollars   == %s\n' "${1}"
+	printf 'Match     %7d         %7d         %7.2f\n' ${2} ${3} `calcCost ${3}`
+	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
+}
+
 # Add a tip read in from the input to the tip file
 function addTip() {
 	if [ "${DEBUG_MODE}" != "" ] ; then
@@ -105,7 +114,7 @@ function addTip() {
 
 		monthNo=0
 		currentMonthNo=0
-		for currentMonthName in "${MONTHS[@]}"; do
+		for currentMonthName in "${MONTHS[@]}" ; do
 			currentMonthNo=$((${currentMonthNo} + 1))
 			if [ "${month}" = "${currentMonthName}" ]; then
 				monthNo=`printf '%02d' ${currentMonthNo}`
@@ -125,7 +134,7 @@ function addTip() {
 		time=`echo ${time} | tr ':' '\t'`
 
 		if [ "${DEBUG_MODE}" != "" ] ; then
-			echo "WRITING [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}|${note}]"
+			echo "WRITING [${monthNo}|${day}|${year}|${time}|${type}|${camgirl}|${tokens}|${note}] row ${count}"
 		fi
 		echo -e "${year}\t${monthNo}\t${day}\t${time}\t${type}\t${camgirl}\t${tokens}\t${note}" >> "${TMPTIPFILE}"
 
@@ -160,33 +169,41 @@ function addTips() {
 
 		# Identify the kind of line last read
 		if [[ ${lineIn[0]} =~ [A-Z][a-z][a-z] &&  ${lineIn[1]} =~ [0-9][0-9stndrd,]+ &&  ${lineIn[2]} =~ [0-9]{4}[,] ]] ; then
-			if [[ ${lineIn[6]} =~ [0-9]+ ]] ; then
+			addTip
+			month=${lineIn[0]}
+			day=${lineIn[1]}
+			year=${lineIn[2]}
+			time=${lineIn[3]}
+
+			# The type field can have spaces in it, so however many fields past 7 there are, we need to add them to type
+			fieldPtr=4
+			typeFieldLast=$((${#lineIn[*]} - 3))
+			# There will be an extra field for public/private if type is Transfer
+			if [[ "${lineIn[5]}" == "Transfer" ]] ; then
+				typeFieldLast=$((typeFieldLast - 1))
 				if [ "${DEBUG_MODE}" != "" ] ; then
-					echo "     Tip line with a single-word type"
+					echo "     Transfer record, decrementing last to ${typeFieldLast}"
 				fi
-				addTip
-				month=${lineIn[0]}
-				day=${lineIn[1]}
-				year=${lineIn[2]}
-				time=${lineIn[3]}
-				type=${lineIn[4]}
-				camgirl=${lineIn[5]}
-				tokens=${lineIn[6]}
-				note=""
-			else
-				if [ "${DEBUG_MODE}" != "" ] ; then
-					echo "     Tip line with a double-word type"
-				fi
-				addTip
-				month=${lineIn[0]}
-				day=${lineIn[1]}
-				year=${lineIn[2]}
-				time=${lineIn[3]}
-				type="${lineIn[4]}${lineIn[5]}"
-				camgirl=${lineIn[6]}
-				tokens=${lineIn[7]}
-				note=""
 			fi
+			if [ "${DEBUG_MODE}" != "" ] ; then
+				echo "     Tip fields: ${fieldPtr} / ${typeFieldLast}, ${#lineIn[*]} total fields"
+			fi
+
+			type=""
+			while [[ ${fieldPtr} -le ${typeFieldLast} ]] ; do
+				type="${type}${lineIn[$fieldPtr]}"
+				if [ "${DEBUG_MODE}" != "" ] ; then
+					echo "     Tip field ${fieldPtr} / ${typeFieldLast} now '${type}'"
+				fi
+				fieldPtr=$((fieldPtr + 1))
+			done
+			# Remove spaces in type
+			type=`echo $type | tr -d ' '`
+
+			camgirl=${lineIn[$fieldPtr]}
+			fieldPtr=$((fieldPtr + 1))
+			tokens=${lineIn[$fieldPtr]}
+			note=""
 		else
 			if [ "${DEBUG_MODE}" != "" ] ; then
 				echo "     Tip note line"
@@ -209,6 +226,19 @@ function addTips() {
 	exit
 }
 
+# Deletes tips before adding
+function replaceTips() {
+	echo "Removing existing rows"
+
+	if [[ -f "${TIPFILE}" ]] ; then
+		rm "${TIPFILE}"
+	fi
+	if [[ -f "${TMPTIPFILE}" ]] ; then
+		rm "${TMPTIPFILE}"
+	fi
+	addTips
+}
+
 # Create data directory
 if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
 	mkdir -p "${TIPTOOL_HOME}"
@@ -225,6 +255,9 @@ while [[ $# -gt 0 ]]
 do
 	key="$1"
 	shift
+	if [ "${DEBUG_MODE}" != "" ] ; then
+		echo "     Option is ${key}"
+	fi
 	case ${key} in
 		-sy|--search_year)
 			SEARCH_YEAR="$1"
@@ -284,14 +317,18 @@ do
 			declare -A gbDayCount
 			declare -A gbDayTokens
 			;;
-		-a|--add-tips)
+		-at|--add-tips)
 			addTips
+			;;
+		-rt|--replace-tips)
+			replaceTips
 			;;
 		-h|--help)
 			usage
 			;;
 		-v|--verbose)
 			DEBUG_MODE=1
+			echo "     Verbose mode"
 			;;
 		*)
 			# unknown option
@@ -302,6 +339,8 @@ done
 
 
 # Read each record and process it
+matchCount=0
+matchTokens=0
 while read year month day hour minute second type camgirl tokens note
 do
 	# Does this record match the filter criteria?
@@ -366,19 +405,19 @@ done < "${TIPFILE}"
 if [[ ${GROUPBYYEAR} -eq 1 ]] ; then
 	for key in `echo ${!gbYearCount[*]} | tr ' ' '\n' | sort`
 	do
-		printStats "Year ${key}" ${gbYearCount[$key]} ${gbYearTokens[$key]}
+		printSubStats "Year ${key}" ${gbYearCount[$key]} ${gbYearTokens[$key]}
 	done
 fi
 if [[ ${GROUPBYMONTH} -eq 1 ]] ; then
 	for key in `echo ${!gbMonthCount[*]} | tr ' ' '\n' | sort`
 	do
-		printStats "Month ${key}" ${gbMonthCount[$key]} ${gbMonthTokens[$key]}
+		printSubStats "Month ${key}" ${gbMonthCount[$key]} ${gbMonthTokens[$key]}
 	done
 fi
 if [[ ${GROUPBYDAY} -eq 1 ]] ; then
 	for key in `echo ${!gbDayCount[*]} | tr ' ' '\n' | sort`
 	do
-		printStats "Day ${key}" ${gbDayCount[$key]} ${gbDayTokens[$key]}
+		printSubStats "Day ${key}" ${gbDayCount[$key]} ${gbDayTokens[$key]}
 	done
 fi
 
@@ -386,7 +425,7 @@ fi
 if [[ ${GROUPBYCAMGIRL} -eq 1 ]] ; then
 	for key in `echo ${!gbCamGirlCount[*]} | tr ' ' '\n' | sort`
 	do
-		printStats "Camgirl ${key}" ${gbCamGirlCount[$key]} ${gbCamGirlTokens[$key]}
+		printSubStats "Camgirl ${key}" ${gbCamGirlCount[$key]} ${gbCamGirlTokens[$key]}
 	done
 fi
 
