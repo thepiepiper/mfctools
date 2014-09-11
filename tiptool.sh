@@ -69,6 +69,10 @@ These options will print subtotals
     -gd                       Group by day
    --groupby-day
 
+Ranking (list highest to lowest)
+    -rc                       Rank CamGirls by percentage of total tips they received
+   --rank-camgirls
+
 Other options
     -h                        Print this help text
     -v                        Verbose mode
@@ -101,6 +105,11 @@ function printSubStats() {
 	printf '            Count          Tokens         Dollars   == %s\n' "${1}"
 	printf 'Match     %7d         %7d         %7.2f\n' ${2} ${3} `calcCost ${3}`
 	printf 'Percent   %7.0f         %7.0f      %7.0f\n' `calcPercent ${2} ${totalCount}` `calcPercent ${3} ${totalTokens}`  `calcPercent ${3} ${totalTokens}`
+}
+
+# Params: title matchTokens
+function printRankStats() {
+	printf '%7.0f%%  %7d tokens    %s\n' `calcPercent ${2} ${totalTokens}` ${2} "${1}"
 }
 
 # Add a tip read in from the input to the tip file
@@ -249,6 +258,7 @@ if [[ ! -d "${TIPTOOL_HOME}" ]] ; then
 fi
 TIPFILE="${TIPTOOL_HOME}/tips.txt"
 TMPTIPFILE="${TIPFILE}.tmp"
+RANKTIPFILE="${TIPFILE}.rank"
 
 
 while [[ $# -gt 0 ]]
@@ -316,6 +326,11 @@ do
 			GROUPBYDAY=1
 			declare -A gbDayCount
 			declare -A gbDayTokens
+			;;
+		-rc|--rank-camgirls)
+			RANKCAMGIRLS=1
+			declare -A gbCamGirlCount
+			declare -A gbCamGirlTokens
 			;;
 		-at|--add-tips)
 			addTips
@@ -392,7 +407,7 @@ do
 			gbDayCount[${year}.${month}.${day}]=$((gbDayCount[${year}.${month}.${day}] + 1))
 			gbDayTokens[${year}.${month}.${day}]=$((gbDayTokens[${year}.${month}.${day}] + $tokens))
 		fi
-		if [[ ${GROUPBYCAMGIRL} -eq 1 ]] ; then
+		if [[ ${GROUPBYCAMGIRL} -eq 1 || ${RANKCAMGIRLS} -eq 1 ]] ; then
 			gbCamGirlCount[$camgirl]=$((gbCamGirlCount[$camgirl] + 1))
 			gbCamGirlTokens[$camgirl]=$((gbCamGirlTokens[$camgirl] + $tokens))
 		fi
@@ -427,6 +442,17 @@ if [[ ${GROUPBYCAMGIRL} -eq 1 ]] ; then
 	do
 		printSubStats "Camgirl ${key}" ${gbCamGirlCount[$key]} ${gbCamGirlTokens[$key]}
 	done
+fi
+
+# Print camgirl rank
+if [[ ${RANKCAMGIRLS} -eq 1 ]] ; then
+	printf '\n=== Top Tipped Camgirls\n'
+	cp /dev/null ${RANKTIPFILE}
+	for key in `echo ${!gbCamGirlTokens[*]} | tr ' ' '\n' | sort`
+	do
+		printRankStats "${key}" ${gbCamGirlTokens[$key]} >>  ${RANKTIPFILE}
+	done
+	cat ${RANKTIPFILE} | sort -n -r -b | nl -s " " -b a -n rn -
 fi
 
 # Print totals
